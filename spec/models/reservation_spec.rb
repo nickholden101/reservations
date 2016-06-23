@@ -1,0 +1,725 @@
+# All commented tests have never passed -- as far as we know the functionality
+# works but more work is needed to ensure that we have test coverage.
+
+require 'spec_helper'
+require 'concerns/linkable_spec.rb'
+
+describe Reservation, type: :model do
+  subject(:reservation) { FactoryGirl.build(:valid_reservation) }
+
+  it { is_expected.to belong_to(:equipment_model) }
+  it { is_expected.to belong_to(:reserver) }
+  it { is_expected.to belong_to(:equipment_item) }
+  it { is_expected.to belong_to(:checkout_handler) }
+  it { is_expected.to belong_to(:checkin_handler) }
+  # it { should validate_presence_of(:reserver) } #fails because of the
+  # deleted reserver
+  it { is_expected.to validate_presence_of(:equipment_model) }
+  # it { should validate_presence_of(:start_date) } #fails because validations
+  # can't run if nil (?)
+  # it { should validate_presence_of(:due_date) } #fails because validations
+  # can't run if nil (?)
+  #
+
+  describe '.number_for' do
+    before(:each) do
+      @source = FactoryGirl.build_pair(:valid_reservation)
+    end
+    it 'counts the number that overlap with today' do
+      expect(Reservation.number_for(@source)).to eq(2)
+    end
+    it 'counts the number that overlap with a given day' do
+      @source.last.assign_attributes(start_date: Time.zone.today + 2,
+                                     due_date: Time.zone.today + 3)
+      expect(Reservation.number_for(@source, date: Time.zone.today + 2.days))
+        .to eq(1)
+    end
+    it 'can count only not overdue reservations' do
+      @source.last.attributes =
+        FactoryGirl.attributes_for(:overdue_reservation)
+      @source.first.start_date = @source.last.start_date
+      expect(Reservation.number_for(@source, date: @source.last.start_date + 1,
+                                             overdue: false)).to eq(1)
+    end
+    it 'can count only reservations on a specific model' do
+      @source.first.attributes = { equipment_model_id: 1 }
+      @source.last.attributes = { equipment_model_id: 2 }
+      expect(Reservation.number_for(@source, equipment_model_id: 1)).to eq(1)
+    end
+    it 'can count not overdue reservations on a model' do
+      @source.last.attributes =
+        FactoryGirl.attributes_for(:overdue_reservation, equipment_model_id: 1)
+      @source.first.attributes = { start_date: @source.last.start_date,
+                                   equipment_model_id: 1 }
+      expect(Reservation.number_for(@source,
+                                    date: @source.last.start_date + 1,
+                                    overdue: false,
+                                    equipment_model_id: 1)).to eq(1)
+    end
+  end
+
+  describe '.find renewal length' do
+    subject(:reservation) do
+      r = FactoryGirl.create(:valid_reservation)
+      FactoryGirl.create(:equipment_item,
+                         equipment_model_id: r.equipment_model_id)
+      r
+    end
+    context 'when no other reservations around' do
+      it 'should set the correct renewal length' do
+        expect(reservation.find_renewal_date).to\
+          eq(reservation.due_date\
+          + reservation.equipment_model.max_renewal_length.days)
+      end
+    end
+    context 'with a blackout date overlapping with the max renewal length' do
+      it 'should set the correct renewal length' do
+        FactoryGirl.create(:blackout,
+                           start_date: reservation.due_date + 2.days,
+                           end_date: reservation.due_date + reservation
+                           .equipment_model.max_renewal_length.days + 1.day)
+        expect(reservation.find_renewal_date).to\
+          eq(reservation.due_date + 1.day)
+      end
+    end
+    context 'with a blackout date going right up to the max renewal length' do
+      it 'should set a length of 0' do
+        FactoryGirl.create(:blackout,
+                           start_date: reservation.due_date + 1.day,
+                           end_date: reservation.due_date + reservation
+                           .equipment_model.max_renewal_length.days + 1.day)
+        expect(reservation.find_renewal_date).to eq(reservation.due_date)
+      end
+    end
+    context 'with another reservation starting in the middle of the max '\
+      'renewal length' do
+      it 'should set the correct renewal length' do
+        r = FactoryGirl.create(:reservation,
+                               equipment_model: reservation.equipment_model,
+                               start_date: reservation.due_date + 3.days,
+                               due_date: reservation.due_date + reservation
+                               .equipment_model.max_renewal_length.days\
+                               + 5.days)
+        r.equipment_model.equipment_items.last.destroy
+        expect(reservation.find_renewal_date).to\
+          eq(reservation.due_date + 2.days)
+      end
+    end
+  end
+
+  context 'when valid' do
+    it { is_expected.to be_valid }
+    it 'should have a valid reserver' do
+      expect(reservation.reserver).not_to be_nil
+      expect(reservation.reserver.first_name).not_to eq('Deleted')
+      expect(reservation.reserver.role).not_to eq('Banned')
+    end
+    it { expect(reservation.equipment_model).to_not be_nil }
+    it { expect(reservation.start_date).to_not be_nil }
+    it { expect(reservation.due_date).to_not be_nil }
+    it 'should save' do
+      expect(reservation.save).to be_truthy
+      expect(Reservation.all.size).to eq(1)
+      expect(Reservation.all.first).to eq(reservation)
+    end
+    it 'can be updated' do
+      reservation.due_date = Time.zone.today + 2.days
+      expect(reservation.save).to be_truthy
+    end
+    it 'passes custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.check_banned).to be_nil
+      expect(reservation.validate).to eq([])
+    end
+    it { is_expected.to respond_to(:fake_reserver_id) }
+    it { is_expected.to respond_to(:late_fee) }
+    it { is_expected.to respond_to(:find_renewal_date) }
+  end
+
+  context 'when not checked out' do
+    it { expect(reservation.reserved?).to be_truthy }
+    # currently returns true; doesn't check for checked out
+    it { expect(reservation).to_not be_eligible_for_renew }
+  end
+
+  context 'when checked out' do
+    subject(:reservation) { FactoryGirl.build(:checked_out_reservation) }
+
+    it { expect(reservation.checked_out?).to be_truthy }
+    it { is_expected.to be_eligible_for_renew }
+  end
+
+  context 'when checked in' do
+    subject(:reservation) { FactoryGirl.build(:checked_in_reservation) }
+
+    it { expect(reservation.returned?).to be_truthy }
+    it { is_expected.not_to be_eligible_for_renew }
+  end
+
+  context 'when overdue' do
+    subject(:reservation) { FactoryGirl.build(:overdue_reservation) }
+
+    it { expect(reservation.overdue).to be_truthy }
+    it { is_expected.not_to be_eligible_for_renew }
+  end
+
+  context 'when missed' do
+    subject(:reservation) { FactoryGirl.build(:missed_reservation) }
+
+    it { expect(reservation.missed?).to be_truthy }
+    it { is_expected.not_to be_eligible_for_renew }
+  end
+
+  context 'when there is no availability on the next day' do
+    before do
+      mod = FactoryGirl.create :equipment_model_with_item
+      @res = FactoryGirl.create :checked_out_reservation, equipment_model: mod
+      FactoryGirl.create :reservation, equipment_model: mod,
+                                       start_date: @res.due_date + 1.day,
+                                       due_date: @res.due_date + 2.days
+    end
+
+    subject(:reservation) { @res }
+
+    it { is_expected.not_to be_eligible_for_renew }
+  end
+
+  context 'when the reserver is banned' do
+    before do
+      user = FactoryGirl.create :user
+      @res = FactoryGirl.create :checked_out_reservation, reserver: user
+      user.update_attributes(role: 'banned', view_mode: 'banned')
+    end
+
+    subject(:reservation) { @res }
+
+    it { is_expected.not_to be_eligible_for_renew }
+  end
+
+  context 'when empty' do
+    subject(:reservation) do
+      FactoryGirl.build(:reservation, equipment_model: nil)
+    end
+
+    it { is_expected.not_to be_valid }
+    it 'should not save' do
+      expect(reservation.save).to be_falsey
+      expect(Reservation.all.size).to eq(0)
+    end
+    it 'cannot be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_falsey
+    end
+    # it 'fails appropriate validations' do
+    #   reservation.should_not be_not_empty
+    #   Reservation.validate_set(reservation.reserver,
+    #                            [] << reservation).should_not == [] #fails
+    # end
+    # it 'passes other custom validations' do
+    #   reservation.should be_no_overdue_reservations
+    #   reservation.should be_start_date_before_due_date
+    #   reservation.should be_not_in_past
+    #   reservation.should be_matched_item_and_model
+    #   reservation.should be_duration_allowed # fails: tries to run
+    # validations on nil
+    #   reservation.should be_start_date_is_not_blackout
+    #   reservation.should be_due_date_is_not_blackout
+    #   reservation.should be_available #fails: tries to run validations on nil
+    #   reservation.should be_quantity_eq_model_allowed # fails: tries to run
+    # validations on nil
+    #   reservation.should be_quantity_cat_allowed # fails: tries to run
+    # validations on nil
+    # end
+    it 'updates with equipment model' do
+      reservation.equipment_model = FactoryGirl.create(:equipment_model)
+      FactoryGirl.create(:equipment_item,
+                         equipment_model: reservation.equipment_model)
+      expect(reservation.save).to be_truthy
+      expect(reservation).to be_valid
+      expect(Reservation.all.size).to eq(1)
+    end
+  end
+
+  context 'editing the due date' do
+    context 'while not checked out' do
+      shared_examples_for 'does not affect the overdue status' do |res_type|
+        subject(:reservation) do
+          r = FactoryGirl.build(res_type)
+          r.save(validate: false)
+          r
+        end
+
+        it 'regardless of date' do
+          reservation.due_date = Time.zone.today - 1.day
+          expect { reservation.save }.not_to change { reservation.overdue }
+          reservation.due_date = Time.zone.today + 1.day
+          expect { reservation.save }.not_to change { reservation.overdue }
+        end
+      end
+
+      statuses = [:valid_reservation, :checked_in_reservation, :request,
+                  :missed_reservation]
+      statuses.each do |type|
+        it_behaves_like 'does not affect the overdue status', type
+      end
+    end
+
+    context 'while checked out and not overdue' do
+      subject(:reservation) do
+        r = FactoryGirl.build(:checked_out_reservation,
+                              start_date: Time.zone.today - 2.days)
+        r.save(validate: false)
+        r
+      end
+
+      it { expect(reservation.overdue).to be_falsey }
+
+      it 'changes overdue attribute if due date is in past' do
+        reservation.update_attributes(due_date: Time.zone.today - 1.day)
+        expect(reservation.overdue).to be_truthy
+      end
+
+      it 'does not change overdue attribute if due date is not in past' do
+        reservation.update_attributes(due_date: Time.zone.today + 2.days)
+        expect(reservation.overdue).to be_falsey
+      end
+    end
+
+    context 'while checked out and overdue' do
+      subject(:reservation) do
+        r = FactoryGirl.build(:overdue_reservation,
+                              start_date: Time.zone.today - 2.days)
+        r.save(validate: false)
+        r
+      end
+
+      it { expect(reservation.overdue).to be_truthy }
+
+      it 'does not change overdue attribute if due date is in past' do
+        reservation.update_attributes(due_date: Time.zone.today - 1.day)
+        expect(reservation.overdue).to be_truthy
+      end
+
+      it 'changes overdue attribute if due date is not in past' do
+        reservation.update_attributes(due_date: Time.zone.today + 2.days)
+        expect(reservation.overdue).to be_falsey
+      end
+    end
+  end
+
+  context 'with past due date' do
+    subject(:reservation) do
+      FactoryGirl.build(:valid_reservation, due_date: Time.zone.today - 1.day)
+    end
+
+    it { is_expected.not_to be_valid }
+    it 'should not save' do
+      expect(reservation.save).to be_falsey
+      expect(Reservation.all.size).to eq(0)
+    end
+    it 'cannot be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_falsey
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.start_date_before_due_date).not_to be_nil
+      expect(reservation.not_in_past).not_to be_nil
+    end
+    it 'passes other custom validations' do
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.check_banned).to be_nil
+      expect(reservation.validate).to eq([])
+    end
+    it 'updates with fixed date' do
+      reservation.due_date = Time.zone.today + 2.days
+      expect(reservation.save).to be_truthy
+      expect(reservation).to be_valid
+      expect(Reservation.all.size).to eq(1)
+    end
+  end
+
+  context 'with blacked out start date' do
+    let!(:blackout) do
+      FactoryGirl.create(:blackout,
+                         start_date: reservation.start_date,
+                         end_date: reservation.due_date)
+    end
+
+    it { is_expected.to be_valid }
+    it 'should save' do
+      expect(reservation.save).to be_truthy
+      expect(Reservation.all.size).to eq(1)
+    end
+    it 'can be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_truthy
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.validate).not_to eq([])
+    end
+    it 'passes other custom validations' do
+      expect(reservation.not_in_past).to be_nil
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.check_banned).to be_nil
+    end
+  end
+
+  context 'with no user' do
+    subject(:reservation) do
+      FactoryGirl.build(:valid_reservation, reserver: nil)
+    end
+
+    it 'should have a deleted user' do
+      expect(reservation.reserver).not_to be_nil
+      expect(reservation.reserver.first_name).to eq('Deleted')
+    end
+    it { is_expected.to be_valid }
+  end
+
+  context 'when user has overdue reservation' do
+    subject(:reservation) { FactoryGirl.build(:valid_reservation) }
+    let(:overdue_reserver) { reservation.reserver }
+    let!(:overdue) do
+      o = FactoryGirl.build(:overdue_reservation, reserver: overdue_reserver)
+      o.save(validate: false)
+      o
+    end
+
+    it { is_expected.to be_valid }
+    it 'should not save' do
+      expect(reservation.save).to be_truthy
+      expect(Reservation.all.size).to eq(2)
+      expect(Reservation.all.first).to eq(overdue)
+    end
+    it 'can be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_truthy
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.validate).not_to eq([])
+    end
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.not_in_past).to be_nil
+      expect(reservation.check_banned).to be_nil
+    end
+  end
+
+  context 'with banned user' do
+    let(:banned) { FactoryGirl.create(:banned) }
+    subject(:reservation) do
+      FactoryGirl.build(:valid_reservation, reserver_id: banned.id)
+    end
+
+    it { is_expected.not_to be_valid }
+    it 'should not save' do
+      expect(reservation.save).to be_falsey
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.validate).not_to eq([])
+    end
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.not_in_past).to be_nil
+    end
+  end
+
+  context 'with equipment item available problems' do
+    before(:each) do
+      FactoryGirl.create(:checked_out_reservation,
+                         equipment_model: reservation.equipment_model,
+                         start_date: reservation.start_date,
+                         due_date: reservation.due_date,
+                         equipment_item: reservation.equipment_model
+                           .equipment_items.first)
+    end
+
+    it { is_expected.not_to be_valid }
+    it 'should not save' do
+      expect(reservation.save).to be_falsey
+      expect(Reservation.all.size).to eq(1)
+    end
+    it 'cannot be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_falsey
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.available).not_to eq([])
+      expect(reservation).not_to be_valid
+    end
+
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.not_in_past).to be_nil
+    end
+  end
+
+  context 'with equipment item/model matching problems' do
+    subject(:reservation) do
+      r = FactoryGirl.build(:valid_reservation)
+      r.equipment_item = FactoryGirl.create(:equipment_item)
+      r
+    end
+
+    it { is_expected.not_to be_valid }
+    it 'should not save' do
+      expect(reservation.save).to be_falsey
+      expect(Reservation.all.size).to eq(0)
+    end
+    it 'cannot be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_falsey
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.matched_item_and_model).not_to be_nil
+    end
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.not_in_past).to be_nil
+      expect(reservation.check_banned).to be_nil
+      expect(reservation.validate).to eq([])
+    end
+  end
+
+  context 'with duration problems' do
+    subject(:reservation) do
+      r = FactoryGirl.build(:valid_reservation)
+      r.equipment_model.category.max_checkout_length = 1
+      r.equipment_model.category.save
+      r.due_date = Time.zone.today + 3.days
+      r
+    end
+
+    it { is_expected.to be_valid }
+    it 'should save' do
+      expect(reservation.save).to be_truthy
+      expect(Reservation.all.size).to eq(1)
+    end
+    it 'can update' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_truthy
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.validate).not_to eq([])
+    end
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.not_in_past).to be_nil
+      expect(reservation.check_banned).to be_nil
+    end
+  end
+
+  context 'with category quantity problems' do
+    subject(:reservation) do
+      r = FactoryGirl.create(:valid_reservation)
+      r.equipment_model.category.max_per_user = 1
+      r.equipment_model.max_per_user = 2
+      r.equipment_model.save
+      r.equipment_model.category.save
+      FactoryGirl.create(:equipment_item, equipment_model: r.equipment_model)
+      FactoryGirl.create(:equipment_item, equipment_model: r.equipment_model)
+      FactoryGirl.create(:reservation,
+                         equipment_model: r.equipment_model,
+                         reserver: r.reserver)
+      r
+    end
+
+    it { is_expected.to be_valid }
+    it 'should save' do
+      expect(reservation.save).to be_truthy
+      expect(Reservation.all.size).to eq(2)
+    end
+    it 'can be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_truthy
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.validate).not_to eq([])
+    end
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.not_in_past).to be_nil
+      expect(reservation.check_banned).to be_nil
+    end
+  end
+
+  context 'with equipment model quantity problems' do
+    subject(:reservation) do
+      r = FactoryGirl.create(:valid_reservation)
+      r.equipment_model.category.max_per_user = 1
+      r.equipment_model.max_per_user = 1
+      r.equipment_model.save
+      r.equipment_model.category.save
+      FactoryGirl.create(:equipment_item, equipment_model: r.equipment_model)
+      FactoryGirl.create(:equipment_item, equipment_model: r.equipment_model)
+      FactoryGirl.create(:valid_reservation,
+                         equipment_model: r.equipment_model,
+                         reserver: r.reserver)
+      r
+    end
+
+    it { is_expected.to be_valid }
+    it 'should save' do
+      expect(reservation.save).to be_truthy
+      expect(Reservation.all.size).to eq(2)
+    end
+    it 'can be updated' do
+      reservation.start_date = Time.zone.today + 1.day
+      expect(reservation.save).to be_truthy
+    end
+    it 'fails appropriate validations' do
+      expect(reservation.validate).not_to eq([])
+    end
+    it 'passes other custom validations' do
+      expect(reservation.start_date_before_due_date).to be_nil
+      expect(reservation.not_empty).to be_nil
+      expect(reservation.matched_item_and_model).to be_nil
+      expect(reservation.available).to be_nil
+      expect(reservation.not_in_past).to be_nil
+      expect(reservation.check_banned).to be_nil
+    end
+  end
+
+  context 'when in a final status' do
+    subject(:reservation) do
+      FactoryGirl.create(:valid_reservation)
+    end
+    it 'the status should not be able to be changed if denied' do
+      reservation.update_attributes(status: 'denied')
+      reservation.status = 'reserved'
+      expect { reservation.save! }.to raise_error ActiveRecord::RecordInvalid
+    end
+    it 'the status should not be able to be changed if missed' do
+      reservation.update_attributes(
+        FactoryGirl.attributes_for(:missed_reservation)
+      )
+      reservation.status = 'reserved'
+      expect { reservation.save! }.to raise_error ActiveRecord::RecordInvalid
+    end
+    it 'the status should not be able to be changed if returned' do
+      reservation.update_attributes(
+        FactoryGirl.attributes_for(:checked_in_reservation)
+      )
+      reservation.status = 'reserved'
+      expect { reservation.save! }.to raise_error ActiveRecord::RecordInvalid
+    end
+  end
+
+  context '#approved?' do
+    subject(:reservation) { FactoryGirl.create(:request) }
+
+    it 'returns false if requested' do
+      expect(reservation.approved?).to be_falsey
+    end
+
+    it 'returns false if denied' do
+      reservation.update_attributes(status: 'denied')
+      expect(reservation.approved?).to be_falsey
+    end
+
+    it 'returns true if approved' do
+      reservation.update_attributes(status: 'reserved')
+      expect(reservation.approved?).to be_truthy
+    end
+
+    it 'returns false if not a request' do
+      expect(FactoryGirl.create(:valid_reservation).approved?).to be_falsey
+    end
+  end
+
+  context '#late_fee' do
+    let(:reservation) do
+      r = FactoryGirl.build(:overdue_reservation)
+      r.save(validate: false)
+      r
+    end
+
+    it 'returns the correct late fee' do
+      expected = (Time.zone.today - reservation.due_date) *
+                 reservation.equipment_model.late_fee
+      expect(reservation.late_fee).to eq(expected)
+    end
+
+    it 'returns 0 if not overdue' do
+      reservation.update_attributes(due_date: Time.zone.today + 1.day,
+                                    overdue: false)
+      expect(reservation.late_fee).to eq(0)
+    end
+
+    it 'returns the cap if a cap is set' do
+      reservation.equipment_model.update_attributes(late_fee: 100,
+                                                    late_fee_max: 100)
+      reservation.update_attributes(due_date: Time.zone.today - 3.days)
+      expect(reservation.late_fee).to \
+        eq(reservation.equipment_model.late_fee_max)
+    end
+
+    it 'returns the full amount if no cap set' do
+      reservation.equipment_model.update_attributes(late_fee: 100,
+                                                    late_fee_max: 0)
+      reservation.update_attributes(due_date: Time.zone.today - 3.days)
+      expected = (Time.zone.today - reservation.due_date) *
+                 reservation.equipment_model.late_fee
+      expect(reservation.late_fee).to eq(expected)
+    end
+  end
+
+  context '#end_date' do
+    context 'if checked in' do
+      before { @res = FactoryGirl.build(:checked_in_reservation) }
+
+      it 'returns the checkin date' do
+        expect(@res.end_date).to eq(@res.checked_in)
+      end
+
+      it 'does not care if overdue' do
+        @res.overdue = true
+        expect(@res.end_date).to eq(@res.checked_in)
+      end
+    end
+
+    context 'if overdue' do
+      before { @res = FactoryGirl.build(:overdue_reservation) }
+
+      it 'returns today' do
+        expect(@res.end_date).to eq(Time.zone.today)
+      end
+    end
+
+    context 'otherwise' do
+      it 'returns due date for request' do
+        res = FactoryGirl.build(:request)
+        expect(res.end_date).to eq(res.due_date)
+      end
+
+      it 'returns due date for reserved' do
+        res = FactoryGirl.build(:valid_reservation)
+        expect(res.end_date).to eq(res.due_date)
+      end
+    end
+  end
+
+  it_behaves_like 'linkable'
+end

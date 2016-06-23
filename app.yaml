@@ -1,0 +1,16 @@
+
+
+api_version: 1
+entrypoint: rails server
+runtime: custom
+vm: true
+health_check:
+  enable_health_check: false
+
+env_variables:
+  # Replace user, password, and host with the values obtained when
+  # configuring your Cloud SQL instance.
+  MYSQL_HOST: 173.194.236.150
+  MYSQL_USER: master1
+  MYSQL_PASSWORD: Bella120201
+  MYSQL_DATABASE: clove1
