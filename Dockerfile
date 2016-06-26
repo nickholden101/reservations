@@ -38,4 +38,4 @@ RUN if test -d app/assets -a -f config/application.rb; then \
 ENTRYPOINT []
 
 # Start application on port $PORT.
-CMD bundle exec rake:setup
+CMD bundle exec rake app:setup
