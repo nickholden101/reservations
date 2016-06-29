@@ -20,8 +20,8 @@ gem 'cancancan', '~> 1.14.0'
 # scheduling
 gem 'whenever', '~> 0.9.4'
 
-# debugging with rollbar
-gem 'rollbar'
+# debugging with appsignal
+gem 'appsignal'
 
 # administrative panel
 gem 'rails_admin', '~> 0.8.1'
