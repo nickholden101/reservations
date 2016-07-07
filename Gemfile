@@ -110,12 +110,13 @@ end
 group :production do
   gem 'therubyracer', '~> 0.12.2', require: 'v8'
   gem 'party_foul', '~> 1.5.5'
+  gem 'puma_worker_killer'
 end
 
 group :heroku do
   gem 'pg', '~> 0.18.4'
   gem 'unicorn', '~> 5.1.0'
   gem 'rack-timeout', '~> 0.4.2'
-  gem 'aws-sdk', '< 2.0'
+  gem 'aws-sdk', '~> 2.3', '>= 2.3.15'  
   gem 'rails_12factor', '~> 0.0.3'
 end
