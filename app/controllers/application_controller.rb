@@ -210,13 +210,23 @@ class ApplicationController < ActionController::Base
   # rubocop:disable MethodLength, AbcSize
   def prepare_catalog_index_vars(eq_models = nil)
     # prepare the catalog
-    eq_models ||=
-      EquipmentModel.active
-                    .order('categories.sort_order ASC, '\
-                           'equipment_models.name ASC')
-                    .includes(:category, :requirements)
-                    .page(params[:page])
-                    .per(session[:items_per_page])
+    if params[:category_id]
+      eq_models ||=
+        EquipmentModel.active.where(:category_id => params[:category_id])
+                      .order('categories.sort_order ASC, '\
+                             'equipment_models.name ASC')
+                      .includes(:category, :requirements)
+                      .page(params[:page])
+                      .per(session[:items_per_page])
+    else
+      eq_models ||=
+        EquipmentModel.active
+                      .order('categories.sort_order ASC, '\
+                             'equipment_models.name ASC')
+                      .includes(:category, :requirements)
+                      .page(params[:page])
+                      .per(session[:items_per_page])
+    end
     @eq_models_by_category = eq_models.to_a.group_by(&:category)
 
     @available_string = 'available from '\
