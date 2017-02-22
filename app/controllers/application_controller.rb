@@ -148,8 +148,10 @@ class ApplicationController < ActionController::Base
     cart = session[:cart]
     flash.clear
     begin
-      cart.start_date = params[:cart][:start_date_cart].to_date
-      cart.due_date = params[:cart][:due_date_cart].to_date
+      # cart.start_date = params[:cart][:start_date_cart].to_date
+      # cart.due_date = params[:cart][:due_date_cart].to_date
+      cart.start_date = DateTime.parse params[:cart][:start_date_cart]
+      cart.due_date = DateTime.parse params[:cart][:due_date_cart]
       cart.fix_due_date
       cart.reserver_id =
         if params[:reserver_id].blank?

@@ -117,7 +117,7 @@ module CartValidations
     errors = []
     get_items.each do |model, number_in_cart|
       # get highest number of items reserved in date range of cart
-      valid = Reservation.number_for_date_range(source, start_date..due_date,
+      valid = Reservation.number_for_date_range(source, start_date.to_date..due_date.to_date,
                                                 equipment_model_id: model.id,
                                                 overdue: false).max
       valid ||= 0
@@ -149,7 +149,7 @@ module CartValidations
     cat_hash.each do |cat, q|
       max = cat.maximum_per_user
       s = source.select { |r| r.equipment_model.category == cat }
-      s = Reservation.number_for_date_range(s, start_date..due_date).max
+      s = Reservation.number_for_date_range(s, start_date.to_date..due_date.to_date).max
       s ||= 0
       o = overdue.count { |r| r.equipment_model.category == cat }
       next unless s + o + q > max
