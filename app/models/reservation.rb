@@ -197,7 +197,7 @@ class Reservation < ActiveRecord::Base
 
   def late_fee
     return 0 unless overdue
-    fee = equipment_model.late_fee * (end_date.to_date - due_date)
+    fee = equipment_model.late_fee * (end_date.to_date - due_date.to_date)
     if fee < 0
       fee = 0
     elsif equipment_model.late_fee_max > 0

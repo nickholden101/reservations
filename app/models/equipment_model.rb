@@ -169,7 +169,7 @@ class EquipmentModel < ActiveRecord::Base
   def num_busy(start_date, due_date, source)
     # get the number busy (not able to be reserved) in the source reservations
     # uses 0 queries
-    max = Reservation.number_for_date_range(source, start_date..due_date,
+    max = Reservation.number_for_date_range(source, start_date.to_date..due_date.to_date,
                                             equipment_model_id: id,
                                             overdue: false).max
     max ||= 0

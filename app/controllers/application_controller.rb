@@ -148,8 +148,10 @@ class ApplicationController < ActionController::Base
     cart = session[:cart]
     flash.clear
     begin
-      cart.start_date = params[:cart][:start_date_cart].to_date
-      cart.due_date = params[:cart][:due_date_cart].to_date
+      # cart.start_date = params[:cart][:start_date_cart].to_date
+      # cart.due_date = params[:cart][:due_date_cart].to_date
+      cart.start_date = DateTime.parse params[:cart][:start_date_cart]
+      cart.due_date = DateTime.parse params[:cart][:due_date_cart]
       cart.fix_due_date
       cart.reserver_id =
         if params[:reserver_id].blank?
@@ -210,13 +212,23 @@ class ApplicationController < ActionController::Base
   # rubocop:disable MethodLength, AbcSize
   def prepare_catalog_index_vars(eq_models = nil)
     # prepare the catalog
-    eq_models ||=
-      EquipmentModel.active
-                    .order('categories.sort_order ASC, '\
-                           'equipment_models.name ASC')
-                    .includes(:category, :requirements)
-                    .page(params[:page])
-                    .per(session[:items_per_page])
+    if params[:category_id]
+      eq_models ||=
+        EquipmentModel.active.where(:category_id => params[:category_id])
+                      .order('categories.sort_order ASC, '\
+                             'equipment_models.name ASC')
+                      .includes(:category, :requirements)
+                      .page(params[:page])
+                      .per(session[:items_per_page])
+    else
+      eq_models ||=
+        EquipmentModel.active
+                      .order('categories.sort_order ASC, '\
+                             'equipment_models.name ASC')
+                      .includes(:category, :requirements)
+                      .page(params[:page])
+                      .per(session[:items_per_page])
+    end
     @eq_models_by_category = eq_models.to_a.group_by(&:category)
 
     @available_string = 'available from '\

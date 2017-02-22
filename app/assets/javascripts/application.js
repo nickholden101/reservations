@@ -2,6 +2,7 @@
 //= require jquery_ujs
 //= require datatables.min.js
 //= require jquery-ui/datepicker
+//= require jquery-ui-timepicker-addon
 //= require jquery-ui/autocomplete
 //= require cocoon
 //= require autocomplete-rails
@@ -63,6 +64,7 @@ $(document).on('change', '.autosubmitme', function() {
   if ( $(this).parents('div:first').is("#cart_dates") ) {
     pause_cart();
   }
+  $(this).next().val($(this).val());
   $(this).parents('form:first').submit();
 });
 
