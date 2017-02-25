@@ -26,31 +26,33 @@ function load_datepicker() {
     minDate: 0
   });
 
-  $('.date_start_no_min').datepicker({
-    altField: '#date_start_alt',
-    altFormat: 'yy-mm-dd',
+  $('.date_start_no_min').datetimepicker({
+    dateFormat: 'yy-mm-dd',
+    timeFormat: "hh:mm:ss",
     onClose: function(dateText, inst) {
-      var start_date = $('.date_start_no_min').datepicker("getDate");
-      var end_date = $('.date_end_no_min').datepicker("getDate");
+      var start_date = $('.date_start_no_min').datetimepicker("getDate");
+      var end_date = $('.date_end_no_min').datetimepicker("getDate");
+      $(this).next().val($(this).val());
       if (start_date > end_date){
         var new_date = new Date(start_date.getTime()+86400000);
-        $('.date_end_no_min').datepicker("setDate", new_date);
+        $('.date_end_no_min').datetimepicker("setDate", new_date);
       }
-      $('.date_end_no_min').datepicker( "option" , "minDate" , start_date);
+      $('.date_end_no_min').datetimepicker( "option" , "minDate" , start_date);
     }
   });
 
-  $('.date_end_no_min').datepicker({
-    altField: '#date_end_alt',
-    altFormat: 'yy-mm-dd',
+  $('.date_end_no_min').datetimepicker({
+    dateFormat: 'yy-mm-dd',
+    timeFormat: "hh:mm:ss",
     onClose: function(dateText, inst) {
-      var start_date = $('.date_start_no_min').datepicker("getDate");
-      var end_date = $('.date_end_no_min').datepicker("getDate");
+      var start_date = $('.date_start_no_min').datetimepicker("getDate");
+      var end_date = $('.date_end_no_min').datetimepicker("getDate");
+      $(this).next().val($(this).val());
       if (start_date > end_date) {
         var new_date = new Date(start_date.getTime()+86400000);
-        $('.date_end_no_min').datepicker("setDate", new_date);
+        $('.date_end_no_min').datetimepicker("setDate", new_date);
       }
-      $('.date_end_no_min').datepicker( "option" , "minDate" , start_date);
+      $('.date_end_no_min').datetimepicker( "option" , "minDate" , start_date);
     }
   });
 };
