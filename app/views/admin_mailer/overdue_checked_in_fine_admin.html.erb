@@ -6,7 +6,7 @@
 <p>Checked out on <%= @overdue_checked_in.checked_out.strftime(" %B %e, %Y at %l:%M%P") %> by <%= @overdue_checked_in.checkout_handler.name %>.</p>
 <p>Checked in on <%= @overdue_checked_in.checked_in.strftime(" %B %e, %Y at %l:%M%P") %> by <%= @overdue_checked_in.checkin_handler.name %>.</p>
 
-<p>Due date: <%= @overdue_checked_in.due_date.strftime("%B %e, %Y") %></p>
+<p>Due date: <%= @overdue_checked_in.due_date.strftime('%Y/%m/%d %I:%M:%S') %></p>
 <% unless @overdue_checked_in.notes.blank? %>
   Notes: <%= markdown(@overdue_checked_in.notes) %>
 <% end %>

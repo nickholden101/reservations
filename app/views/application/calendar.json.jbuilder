@@ -8,7 +8,7 @@ missed_clr = '#888'
 # generate json
 json.array!(@calendar_res) do |res|
   json.extract! res, :id
-  json.title "#{res.send(@name_method).name} #{res.start_date.strftime('%I:%M:%S')} - #{res.end_date.strftime('%I:%M:%S')}" 
+  json.title "#{res.send(@name_method).name} #{res.start_date.strftime('%r')} - #{res.end_date.strftime('%r')}" 
   json.start res.start_date
   json.end res.end_date + 1.day
   json.backgroundColor res.overdue ? overdue_clr : eval("#{res.status}_clr")
