@@ -87,8 +87,10 @@ class ReservationsController < ApplicationController
 
   def update_index_dates
     session[:all_dates] = false
-    session[:index_start_date] = params[:list][:start_date].to_date
-    session[:index_end_date] = params[:list][:end_date].to_date
+    # session[:index_start_date] = params[:list][:start_date].to_date
+    # session[:index_end_date] = params[:list][:end_date].to_date
+    session[:index_start_date] = DateTime.parse params[:list][:start_date]
+    session[:index_end_date] = DateTime.parse params[:list][:end_date]
     session[:filter] = params[:list][:filter].to_sym
     redirect_to action: 'index'
   end

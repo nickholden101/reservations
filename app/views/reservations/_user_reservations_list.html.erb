@@ -18,8 +18,8 @@
           <%= reservation.equipment_item.name %>
         <% end %>
       </td>
-      <td><%= reservation.start_date.to_s(:long) %></td>
-      <td><%= reservation.due_date.to_s(:long) %></td>
+      <td><%= reservation.start_date.strftime("%a, %b %d, %Y %r") %></td>
+      <td><%= reservation.due_date.strftime("%a, %b %d, %Y %r") %></td>
       <td><%= number_to_currency(reservation.equipment_model.late_fee) %></td>
     </tr>
   <% end %>
