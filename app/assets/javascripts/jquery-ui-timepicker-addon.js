@@ -63,7 +63,7 @@
 			showTimezone: null,
 			showTime: true,
 			stepHour: 1,
-			stepMinute: 1,
+			stepMinute: 15,
 			stepSecond: 1,
 			stepMillisec: 1,
 			stepMicrosec: 1,
@@ -1574,6 +1574,7 @@
 
 		var tzoffset = $.timepicker.timezoneOffsetNumber(tp_inst.timezone);
 		var now = new Date();
+
 		now.setMinutes(now.getMinutes() + now.getTimezoneOffset() + parseInt(tzoffset, 10));
 		this._setTime(inst, now);
 		this._setDate(inst, now);
